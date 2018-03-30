@@ -23,7 +23,7 @@ ifneq ($(filter mips,$(OSMAND_ARCHITECTURES_SET)),)
     APP_ABI += mips
 endif
 ifneq ($(filter arm,$(OSMAND_ARCHITECTURES_SET)),)
-    APP_ABI += armeabi armeabi-v7a
+    # APP_ABI += armeabi armeabi-v7a
 else
     ifneq ($(filter armv7,$(OSMAND_ARCHITECTURES_SET)),)
         APP_ABI += armeabi-v7a
