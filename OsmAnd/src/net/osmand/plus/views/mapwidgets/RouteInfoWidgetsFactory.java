@@ -14,14 +14,18 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.hardware.GeomagneticField;
+import android.os.AsyncTask;
 import android.os.BatteryManager;
 import android.support.annotation.NonNull;
 import android.support.v4.content.ContextCompat;
 import android.text.format.DateFormat;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
+
+import com.google.gson.Gson;
 
 import net.osmand.Location;
 import net.osmand.binary.RouteDataObject;
@@ -56,12 +60,20 @@ import net.osmand.router.RouteResultPreparation;
 import net.osmand.router.TurnType;
 import net.osmand.util.Algorithms;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 public class RouteInfoWidgetsFactory {
 
@@ -130,7 +142,152 @@ public class RouteInfoWidgetsFactory {
 		// initial state
 		return nextTurnInfo;
 	}
-	
+
+
+	private class WeatherServiceTask extends AsyncTask<String,Void,String>
+	{
+		protected void onPreExecute() {
+		}
+		protected String doInBackground(String... params) {
+			HttpURLConnection c = null;
+			try {
+				String url = params[0];
+				URL u = new URL(url);
+				c = (HttpURLConnection) u.openConnection();
+				c.setRequestMethod("GET");
+				//c.setRequestProperty("Content-length", "0");
+				c.setUseCaches(false);
+				c.setAllowUserInteraction(false);
+				//c.setConnectTimeout(timeout);
+				//c.setReadTimeout(timeout);
+				c.connect();
+				int status = c.getResponseCode();
+
+				switch (status) {
+					case 200:
+					case 201:
+						BufferedReader br = new BufferedReader(new InputStreamReader(c.getInputStream()));
+						StringBuilder sb = new StringBuilder();
+						String line;
+						while ((line = br.readLine()) != null) {
+							sb.append(line+"\n");
+						}
+						br.close();
+						return sb.toString();
+				}
+
+			} catch (MalformedURLException ex) {
+				Log.e("MALFORMED", "error url");
+			} catch (IOException ex) {
+				Log.e("IO", "error io");
+			} finally {
+				if (c != null) {
+					try {
+						c.disconnect();
+					} catch (Exception ex) {
+						Log.e("MALFORMED", "error disconnect");
+					}
+				}
+			}
+			return null;
+		}
+
+		protected void onPostExecute(Void result) {
+		}
+	}
+
+	private void getWeatherForLocation(Location location){
+		final double latitude = location.getLatitude();
+		final double longitude = location.getLongitude();
+
+		final String openWeatherMapApiKey = "bd5e378503939ddaee76f12ad7a97608";
+		final String apiCallFormat = "https://api.openweathermap.org/data/2.5/weather?lat=%f&lon=%f&APPID=" + openWeatherMapApiKey;
+		final String apiCall = String.format(apiCallFormat, latitude, longitude);
+		try {
+			//sendGet(apiCall);
+            String response = getJSON(apiCall, 1000);
+            Log.d("SUCCESS", "Trybi: " + response );
+		} catch (Exception e) {
+			Log.e("ERROR", "sendGet(String url) throws Exception");
+		}
+	}
+
+    private String getJSON(String url, int timeout) throws ExecutionException, InterruptedException {
+		String result = new WeatherServiceTask().execute(url).get();
+		return result;
+
+    }
+
+
+//	// HTTP GET request
+//	private void sendGet(String url) throws Exception {
+//        URLConnection con = new URL(url).openConnection();
+//
+//		// optional default is GET
+//		con.setRequestMethod("GET");
+//
+//		int responseCode = con.getResponseCode();
+//		Log.d("GET", "Sending 'GET' request to URL : " + url);
+//		Log.d("RESPONSE", "Response Code : " + responseCode);
+//
+//		BufferedReader in = new BufferedReader(
+//				new InputStreamReader(con.getInputStream()));
+//		String inputLine;
+//		StringBuffer response = new StringBuffer();
+//
+//		while ((inputLine = in.readLine()) != null) {
+//			response.append(inputLine);
+//		}
+//		in.close();
+//
+//		//print result
+//		Log.d("RESULT", response.toString());
+//
+//	}
+
+	public TextInfoWidget createWeatherControl(final MapActivity map){
+		// Icons
+		final int weather = R.drawable.widget_battery_day;
+		final int weatherNight = R.drawable.widget_battery_night;
+
+		// Location & API
+		final OsmAndLocationProvider locationProvider = map.getMyApplication().getLocationProvider();
+		//final Location lastKnownLocation = locationProvider.getLastKnownLocation();
+
+		// JSON response to java object
+		Gson test = new Gson();
+
+		final TextInfoWidget weatherControl = new TextInfoWidget(map) {
+			private long cachedLeftTime = 0;
+
+			@Override
+			public boolean updateInfo(DrawSettings drawSettings) {
+				long time = System.currentTimeMillis();
+				if (time - cachedLeftTime > 1000) {
+					cachedLeftTime = time;
+
+					Location locationMock = locationProvider.getLastKnownLocation();
+					if(locationMock != null){
+						// Get location from OsmAnd
+						getWeatherForLocation(locationMock);
+						setText("20℃", null);
+						Log.d("TEXT", "20C");
+					}else{
+						setText("Brak", null);
+						Log.d("TEXT", "Brak");
+					}
+					// parse JSON response
+					setIcons(weather, weatherNight);
+				}
+				return false;
+			};
+		};
+
+		weatherControl.setText(null, null);
+		weatherControl.setIcons(weather, weatherNight);
+		return weatherControl;
+	}
+
 	public NextTurnInfoWidget createNextNextInfoControl(final Activity activity,
 			final OsmandApplication app, boolean horisontalMini) {
 		final RoutingHelper routingHelper = app.getRoutingHelper();
