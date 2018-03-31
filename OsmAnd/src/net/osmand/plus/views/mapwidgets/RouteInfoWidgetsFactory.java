@@ -74,6 +74,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class RouteInfoWidgetsFactory {
 
@@ -196,7 +198,8 @@ public class RouteInfoWidgetsFactory {
 		}
 	}
 
-	private void getWeatherForLocation(Location location){
+	// TODO return temperature and weather info
+	private String getWeatherForLocation(Location location){
 		final double latitude = location.getLatitude();
 		final double longitude = location.getLongitude();
 
@@ -204,80 +207,65 @@ public class RouteInfoWidgetsFactory {
 		final String apiCallFormat = "https://api.openweathermap.org/data/2.5/weather?lat=%f&lon=%f&APPID=" + openWeatherMapApiKey;
 		final String apiCall = String.format(apiCallFormat, latitude, longitude);
 		try {
-			//sendGet(apiCall);
-            String response = getJSON(apiCall, 1000);
-            Log.d("SUCCESS", "Trybi: " + response );
+            String response = getJSON(apiCall);
+			Log.d("OpenWeatherMap API", response );
+
+			Pattern temperaturePattern = Pattern.compile("\"temp\":(\\d+(\\.\\d+)?)");
+			Matcher temperatureMatcher = temperaturePattern.matcher(response);
+			temperatureMatcher.find();
+			return temperatureMatcher.group(1); // extracts double value (without "temp")
+
+			// TODO JSON response to java object, use Gson
+			// Gson jsonObjectMock = new Gson();
 		} catch (Exception e) {
-			Log.e("ERROR", "sendGet(String url) throws Exception");
+			Log.e("OpenWeatherMap API", "ERROR");
 		}
+		return "0.0"; // TODO refactor, so that the default value is reasonable ;)
 	}
 
-    private String getJSON(String url, int timeout) throws ExecutionException, InterruptedException {
-		String result = new WeatherServiceTask().execute(url).get();
-		return result;
-
+    private String getJSON(String url) throws ExecutionException, InterruptedException {
+		return new WeatherServiceTask().execute(url).get();
     }
 
-
-//	// HTTP GET request
-//	private void sendGet(String url) throws Exception {
-//        URLConnection con = new URL(url).openConnection();
-//
-//		// optional default is GET
-//		con.setRequestMethod("GET");
-//
-//		int responseCode = con.getResponseCode();
-//		Log.d("GET", "Sending 'GET' request to URL : " + url);
-//		Log.d("RESPONSE", "Response Code : " + responseCode);
-//
-//		BufferedReader in = new BufferedReader(
-//				new InputStreamReader(con.getInputStream()));
-//		String inputLine;
-//		StringBuffer response = new StringBuffer();
-//
-//		while ((inputLine = in.readLine()) != null) {
-//			response.append(inputLine);
-//		}
-//		in.close();
-//
-//		//print result
-//		Log.d("RESULT", response.toString());
-//
-//	}
-
 	public TextInfoWidget createWeatherControl(final MapActivity map){
+	    // TODO refactor -> use more final keyword
+
 		// Icons
+		// TODO use appropriate icons, depending on current weather inside updateInfo()
 		final int weather = R.drawable.widget_battery_day;
 		final int weatherNight = R.drawable.widget_battery_night;
 
 		// Location & API
 		final OsmAndLocationProvider locationProvider = map.getMyApplication().getLocationProvider();
-		//final Location lastKnownLocation = locationProvider.getLastKnownLocation();
-
-		// JSON response to java object
-		Gson test = new Gson();
-
 		final TextInfoWidget weatherControl = new TextInfoWidget(map) {
 			private long cachedLeftTime = 0;
 
 			@Override
 			public boolean updateInfo(DrawSettings drawSettings) {
 				long time = System.currentTimeMillis();
-				if (time - cachedLeftTime > 1000) {
+				long refreshTime = 10000; // ms
+				if (time - cachedLeftTime > refreshTime) {
 					cachedLeftTime = time;
 
-					Location locationMock = locationProvider.getLastKnownLocation();
-					if(locationMock != null){
-						// Get location from OsmAnd
-						getWeatherForLocation(locationMock);
-						setText("20℃", null);
-						Log.d("TEXT", "20C");
+					Location location = locationProvider.getLastKnownLocation();
+
+					if(location != null){
+						String temperatureString = getWeatherForLocation(location);
+
+						double temperatureKelvin = Double.parseDouble(temperatureString);
+						double temperatureCelsius = temperatureKelvin - 273.15;
+                        temperatureString = Double.toString(temperatureCelsius) + "°C";
+
+						setText(temperatureString, null);
+
+						// TODO display appropriate icon for weather condition acoording to getWeatherForLocation()
+						setIcons(weather, weatherNight);
+						Log.d("OpenWeatherMap API", temperatureString);
 					}else{
 						setText("Brak", null);
-						Log.d("TEXT", "Brak");
+						setIcons(weather, weatherNight);
+						Log.d("OpenWeatherMap API", "None");
 					}
-					// parse JSON response
-					setIcons(weather, weatherNight);
 				}
 				return false;
 			};
